@@ -1,4 +1,4 @@
-name: Build geosite (Loyalsoldier + custom merge)
+name: Build geosite (base + custom rules)
 
 on:
   workflow_dispatch:
@@ -21,54 +21,59 @@ jobs:
         uses: actions/checkout@v4
 
       # =========================
-      # Setup Go
+      # Create folders
       # =========================
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
+      - name: Prepare workspace
+        run: |
+          mkdir -p build
+          mkdir -p out
 
       # =========================
       # Download base geosite (Loyalsoldier)
       # =========================
       - name: Download base geosite
         run: |
-          mkdir -p build
-          curl -L -o build/base.dat \
+          curl -L -o build/geosite-base.dat \
           https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
 
       # =========================
-      # Init Go module + deps (FIX)
+      # Install geosite tool
       # =========================
-      - name: Setup Go modules
+      - name: Install geosite tool
         run: |
-          go mod init geosite-builder || true
-
-          go get google.golang.org/protobuf/proto
-          go get github.com/v2fly/v2ray-core/v5/app/router/routercommon
+          go install github.com/v2fly/v2ray-core/v5/tools/conf/geosite@latest
 
       # =========================
-      # Build merged geosite
+      # Convert base to editable format
       # =========================
-      - name: Build geosite.dat
+      - name: Decode base geosite
         run: |
-          mkdir -p out
-
-          go run builder.go \
-            --base build/base.dat \
-            --custom data \
-            --output out/geosite.dat
+          geosite -input build/geosite-base.dat -output build/base.txt
 
       # =========================
-      # Download geoip (optional)
+      # Add your custom rules
       # =========================
-      - name: Download geoip.dat
+      - name: Merge custom rules
+        run: |
+          cat data/*.txt >> build/base.txt
+
+      # =========================
+      # Rebuild geosite.dat
+      # =========================
+      - name: Build final geosite
+        run: |
+          geosite -input build/base.txt -output out/geosite.dat
+
+      # =========================
+      # Download geoip
+      # =========================
+      - name: Download geoip
         run: |
           curl -L -o out/geoip.dat \
           https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
 
       # =========================
-      # Generate hashes
+      # Hashes
       # =========================
       - name: Generate sha256
         run: |
