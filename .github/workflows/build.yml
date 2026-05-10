@@ -29,16 +29,16 @@ jobs:
           go-version: '1.22'
 
       # =========================
-      # Download base geosite
+      # Download base geosite (Loyalsoldier)
       # =========================
-      - name: Download Loyalsoldier geosite
+      - name: Download base geosite
         run: |
           mkdir -p build
           curl -L -o build/base.dat \
           https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
 
       # =========================
-      # Prepare custom rules
+      # Copy custom rules
       # =========================
       - name: Prepare custom rules
         run: |
@@ -117,28 +117,36 @@ jobs:
       # =========================
       # Install deps
       # =========================
-      - name: Install deps
+      - name: Install dependencies
         run: |
           go mod init builder || true
           go get google.golang.org/protobuf/proto
           go get github.com/v2fly/v2ray-core/v5/app/router/routercommon
 
       # =========================
-      # Build final geosite.dat
+      # Build geosite.dat
       # =========================
       - name: Build geosite.dat
         run: |
           go run builder.go
 
       # =========================
-      # Hash
+      # Generate checksum
       # =========================
       - name: Generate checksum
         run: |
           sha256sum geosite.dat > geosite.dat.sha256sum
 
       # =========================
-      # Release
+      # CLEAN (remove junk files)
+      # =========================
+      - name: Cleanup
+        run: |
+          rm -f build/base.dat
+          rm -rf build/custom
+
+      # =========================
+      # Release (ONLY final files)
       # =========================
       - name: Release
         uses: softprops/action-gh-release@v2
