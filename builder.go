@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"strings"
 
@@ -11,27 +10,20 @@ import (
 )
 
 func main() {
-	baseFile := "build/base.dat"
+	data, _ := os.ReadFile("base/geosite.dat")
 
-	data, err := os.ReadFile(baseFile)
-	if err != nil {
-		panic(err)
-	}
+	var geo router.GeoSiteList
+	proto.Unmarshal(data, &geo)
 
-	var base router.GeoSiteList
-	if err := proto.Unmarshal(data, &base); err != nil {
-		panic(err)
-	}
-
-	// читаем твои кастомные правила
-	customDir := "build/custom"
-
-	files, _ := os.ReadDir(customDir)
+	// читаем кастом
+	files, _ := os.ReadDir("data")
 
 	for _, f := range files {
-		name := strings.ToLower(strings.TrimSuffix(f.Name(), ".txt"))
+		if f.IsDir() {
+			continue
+		}
 
-		content, _ := os.ReadFile(customDir + "/" + f.Name())
+		content, _ := os.ReadFile("data/" + f.Name())
 		lines := strings.Split(string(content), "\n")
 
 		var domains []*router.Domain
@@ -42,42 +34,44 @@ func main() {
 				continue
 			}
 
-			d := &router.Domain{
-				Value: l,
-			}
+			d := &router.Domain{}
 
-			// если full:
 			if strings.HasPrefix(l, "full:") {
 				d.Type = router.Domain_Full
 				d.Value = strings.TrimPrefix(l, "full:")
 			} else if strings.HasPrefix(l, "keyword:") {
 				d.Type = router.Domain_Plain
 				d.Value = strings.TrimPrefix(l, "keyword:")
-			} else if strings.HasPrefix(l, "regexp:") {
-				d.Type = router.Domain_Regex
-				d.Value = strings.TrimPrefix(l, "regexp:")
 			} else {
 				d.Type = router.Domain_RootDomain
+				d.Value = l
 			}
 
 			domains = append(domains, d)
 		}
 
-		// добавляем новую категорию в base
-		base.Entry = append(base.Entry, &router.GeoSite{
-			CountryCode: name,
+		name := strings.ToLower(strings.TrimSuffix(f.Name(), ".txt"))
+
+		target := ""
+
+		// 🔥 МАППИНГ В СТАНДАРТ (КЛЮЧЕВОЕ)
+		switch {
+		case strings.Contains(name, "direct"):
+			target = "private"
+		case strings.Contains(name, "ads"):
+			target = "ads"
+		case strings.Contains(name, "apple"):
+			target = "apple"
+		default:
+			target = "proxy"
+		}
+
+		geo.Entry = append(geo.Entry, &router.GeoSite{
+			CountryCode: target,
 			Domain:      domains,
 		})
-
-		fmt.Println("Added category:", name)
 	}
 
-	out, err := proto.Marshal(&base)
-	if err != nil {
-		panic(err)
-	}
-
+	out, _ := proto.Marshal(&geo)
 	os.WriteFile("geosite.dat", out, 0644)
-
-	fmt.Println("Build complete: geosite.dat")
 }
