@@ -1,4 +1,4 @@
-name: Build geosite (Loyalsoldier + custom)
+name: Build geosite (Loyalsoldier + custom merge)
 
 on:
   workflow_dispatch:
@@ -29,7 +29,7 @@ jobs:
           go-version: '1.22'
 
       # =========================
-      # Download Loyalsoldier base
+      # Download base geosite (Loyalsoldier)
       # =========================
       - name: Download base geosite
         run: |
@@ -38,11 +38,22 @@ jobs:
           https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
 
       # =========================
-      # Build custom merge
+      # Init Go module + deps (FIX)
       # =========================
-      - name: Merge custom rules
+      - name: Setup Go modules
+        run: |
+          go mod init geosite-builder || true
+
+          go get google.golang.org/protobuf/proto
+          go get github.com/v2fly/v2ray-core/v5/app/router/routercommon
+
+      # =========================
+      # Build merged geosite
+      # =========================
+      - name: Build geosite.dat
         run: |
           mkdir -p out
+
           go run builder.go \
             --base build/base.dat \
             --custom data \
@@ -51,13 +62,13 @@ jobs:
       # =========================
       # Download geoip (optional)
       # =========================
-      - name: Download geoip
+      - name: Download geoip.dat
         run: |
           curl -L -o out/geoip.dat \
           https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
 
       # =========================
-      # Hash
+      # Generate hashes
       # =========================
       - name: Generate sha256
         run: |
@@ -65,9 +76,9 @@ jobs:
           sha256sum out/geoip.dat > out/geoip.dat.sha256sum
 
       # =========================
-      # Release versioned
+      # Release
       # =========================
-      - name: Release
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
