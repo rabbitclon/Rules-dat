@@ -1,0 +1,53 @@
+name: Build geosite.dat
+
+on:
+  push:
+    paths:
+      - "data/**"
+
+  schedule:
+    - cron: "0 * * * *"
+
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git wget curl
+
+      - name: Clone Loyalsoldier repo
+        run: |
+          git clone https://github.com/Loyalsoldier/v2ray-rules-dat.git dlc
+
+      - name: Copy custom rules
+        run: |
+          cp data/* dlc/data/
+
+      - name: Build geosite.dat
+        run: |
+          cd dlc
+          chmod +x release.sh
+          ./release.sh
+
+      - name: Copy output
+        run: |
+          cp dlc/publish/geosite.dat geosite.dat
+
+      - name: Upload Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          files: geosite.dat
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
