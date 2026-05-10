@@ -10,20 +10,32 @@ import (
 )
 
 func main() {
-	data, _ := os.ReadFile("base/geosite.dat")
+	data, err := os.ReadFile("base/geosite.dat")
+	if err != nil {
+		panic(err)
+	}
 
 	var geo router.GeoSiteList
-	proto.Unmarshal(data, &geo)
+	if err := proto.Unmarshal(data, &geo); err != nil {
+		panic(err)
+	}
 
 	// читаем кастом
-	files, _ := os.ReadDir("data")
+	files, err := os.ReadDir("data")
+	if err != nil {
+		panic(err)
+	}
 
 	for _, f := range files {
 		if f.IsDir() {
 			continue
 		}
 
-		content, _ := os.ReadFile("data/" + f.Name())
+		content, err := os.ReadFile("data/" + f.Name())
+		if err != nil {
+			continue
+		}
+
 		lines := strings.Split(string(content), "\n")
 
 		var domains []*router.Domain
@@ -42,6 +54,9 @@ func main() {
 			} else if strings.HasPrefix(l, "keyword:") {
 				d.Type = router.Domain_Plain
 				d.Value = strings.TrimPrefix(l, "keyword:")
+			} else if strings.HasPrefix(l, "regexp:") {
+				d.Type = router.Domain_Regex
+				d.Value = strings.TrimPrefix(l, "regexp:")
 			} else {
 				d.Type = router.Domain_RootDomain
 				d.Value = l
@@ -54,24 +69,42 @@ func main() {
 
 		target := ""
 
-		// 🔥 МАППИНГ В СТАНДАРТ (КЛЮЧЕВОЕ)
+		// =========================
+		// CATEGORY MAP (твои правила)
+		// =========================
 		switch {
 		case strings.Contains(name, "direct"):
 			target = "private"
+
 		case strings.Contains(name, "ads"):
 			target = "ads"
+
 		case strings.Contains(name, "apple"):
 			target = "apple"
+
+		case strings.Contains(name, "tm"):
+			target = "tm-rules"
+
 		default:
 			target = "proxy"
 		}
 
+		// =========================
+		// FIX: visibility in PassWall2 Geo View
+		// =========================
 		geo.Entry = append(geo.Entry, &router.GeoSite{
-			CountryCode: target,
+			CountryCode: "geosite:" + target,
 			Domain:      domains,
 		})
 	}
 
-	out, _ := proto.Marshal(&geo)
-	os.WriteFile("geosite.dat", out, 0644)
+	out, err := proto.Marshal(&geo)
+	if err != nil {
+		panic(err)
+	}
+
+	err = os.WriteFile("geosite.dat", out, 0644)
+	if err != nil {
+		panic(err)
+	}
 }
