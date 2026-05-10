@@ -1,4 +1,4 @@
-name: Build custom rules
+name: Build geosite (Loyalsoldier + custom)
 
 on:
   workflow_dispatch:
@@ -15,15 +15,13 @@ jobs:
 
     steps:
       # =========================
-      # CHECKOUT
+      # Checkout
       # =========================
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       # =========================
-      # SETUP GO
+      # Setup Go
       # =========================
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -31,49 +29,35 @@ jobs:
           go-version: '1.22'
 
       # =========================
-      # BUILD VERSION
+      # Download Loyalsoldier base
       # =========================
-      - name: Set version
+      - name: Download base geosite
         run: |
-          DATE=$(date +%Y.%m.%d)
-          RUN=${{ github.run_number }}
-          echo "VERSION=v${DATE}.${RUN}" >> $GITHUB_ENV
+          mkdir -p build
+          curl -L -o build/base.dat \
+          https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
 
       # =========================
-      # CLONE DLC
+      # Build custom merge
       # =========================
-      - name: Clone domain-list-community
-        run: |
-          git clone https://github.com/v2fly/domain-list-community.git dlc
-
-      # =========================
-      # COPY CUSTOM DATA
-      # =========================
-      - name: Copy custom data
-        run: |
-          cp -r data/* dlc/data/
-
-      # =========================
-      # BUILD GEOSITE
-      # =========================
-      - name: Build geosite.dat
+      - name: Merge custom rules
         run: |
           mkdir -p out
-          cd dlc || exit 1
-          go run ./ \
-            --outputdir=../out \
-            --outputname=geosite.dat
+          go run builder.go \
+            --base build/base.dat \
+            --custom data \
+            --output out/geosite.dat
 
       # =========================
-      # DOWNLOAD GEOIP
+      # Download geoip (optional)
       # =========================
-      - name: Download geoip.dat
+      - name: Download geoip
         run: |
           curl -L -o out/geoip.dat \
           https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
 
       # =========================
-      # HASH
+      # Hash
       # =========================
       - name: Generate sha256
         run: |
@@ -81,27 +65,16 @@ jobs:
           sha256sum out/geoip.dat > out/geoip.dat.sha256sum
 
       # =========================
-      # RELEASE (VERSIONED)
+      # Release versioned
       # =========================
-      - name: Create Release
+      - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.VERSION }}
-          name: ${{ env.VERSION }}
+          tag_name: v${{ github.run_number }}
+          name: build-${{ github.run_number }}
           files: |
             out/geosite.dat
             out/geoip.dat
             out/*.sha256sum
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # =========================
-      # CLEAN OLD RELEASES (KEEP 10)
-      # =========================
-      - name: Cleanup old releases
-        uses: dev-drprasad/delete-older-releases@v0.3.4
-        with:
-          keep_latest: 10
-          delete_tags: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
