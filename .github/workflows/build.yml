@@ -1,4 +1,4 @@
-name: Build custom geosite.dat
+name: Build custom rules
 
 on:
   workflow_dispatch:
@@ -15,13 +15,15 @@ jobs:
 
     steps:
       # =========================
-      # Checkout
+      # CHECKOUT (FIXED)
       # =========================
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # =========================
-      # Setup Go
+      # SETUP GO
       # =========================
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -29,169 +31,57 @@ jobs:
           go-version: '1.22'
 
       # =========================
-      # VERSION (vYYYY.MM.DD.NNN)
+      # CLONE DLC
       # =========================
-      - name: Set version
+      - name: Clone domain-list-community
         run: |
-          DATE=$(date +%Y.%m.%d)
-          RUN_NUM=$(date +%H%M%S | sed 's/^0*//')
-
-          echo "VERSION=v${DATE}.${RUN_NUM}" >> $GITHUB_ENV
+          git clone https://github.com/v2fly/domain-list-community.git dlc
 
       # =========================
-      # Download base geosite
+      # COPY CUSTOM DATA
       # =========================
-      - name: Download base geosite
+      - name: Copy custom data
         run: |
-          mkdir -p build
-          curl -L -o build/base.dat \
-          https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
+          cp -r data/* dlc/data/
 
       # =========================
-      # Copy custom rules
-      # =========================
-      - name: Prepare custom rules
-        run: |
-          mkdir -p build/custom
-          cp -r data/* build/custom/
-
-      # =========================
-      # Create builder
-      # =========================
-      - name: Create builder
-        run: |
-          cat << 'EOF' > builder.go
-          package main
-
-          import (
-            "os"
-            "strings"
-
-            "google.golang.org/protobuf/proto"
-
-            router "github.com/v2fly/v2ray-core/v5/app/router/routercommon"
-          )
-
-          func main() {
-            data, _ := os.ReadFile("build/base.dat")
-
-            var geo router.GeoSiteList
-            proto.Unmarshal(data, &geo)
-
-            files, _ := os.ReadDir("build/custom")
-
-            for _, f := range files {
-              name := strings.ToLower(strings.TrimSuffix(f.Name(), ".txt"))
-
-              content, _ := os.ReadFile("build/custom/" + f.Name())
-              lines := strings.Split(string(content), "\n")
-
-              var domains []*router.Domain
-
-              for _, l := range lines {
-                l = strings.TrimSpace(l)
-                if l == "" {
-                  continue
-                }
-
-                d := &router.Domain{}
-
-                if strings.HasPrefix(l, "full:") {
-                  d.Type = router.Domain_Full
-                  d.Value = strings.TrimPrefix(l, "full:")
-                } else if strings.HasPrefix(l, "keyword:") {
-                  d.Type = router.Domain_Plain
-                  d.Value = strings.TrimPrefix(l, "keyword:")
-                } else if strings.HasPrefix(l, "regexp:") {
-                  d.Type = router.Domain_Regex
-                  d.Value = strings.TrimPrefix(l, "regexp:")
-                } else {
-                  d.Type = router.Domain_RootDomain
-                  d.Value = l
-                }
-
-                domains = append(domains, d)
-              }
-
-              geo.Entry = append(geo.Entry, &router.GeoSite{
-                CountryCode: name,
-                Domain:      domains,
-              })
-            }
-
-            out, _ := proto.Marshal(&geo)
-            os.WriteFile("geosite.dat", out, 0644)
-          }
-          EOF
-
-      # =========================
-      # Install deps
-      # =========================
-      - name: Install deps
-        run: |
-          go mod init builder || true
-          go get google.golang.org/protobuf/proto
-          go get github.com/v2fly/v2ray-core/v5/app/router/routercommon
-
-      # =========================
-      # Build geosite
+      # BUILD GEOSITE
       # =========================
       - name: Build geosite.dat
         run: |
-          go run builder.go
+          mkdir -p out
+          cd dlc || exit 1
+          go run ./ \
+            --outputdir=../out \
+            --outputname=geosite.dat
 
       # =========================
-      # SHA256
+      # DOWNLOAD GEOIP (OFFICIAL)
       # =========================
-      - name: Generate checksum
+      - name: Download geoip.dat
         run: |
-          sha256sum geosite.dat > geosite.dat.sha256sum
+          curl -L -o out/geoip.dat \
+          https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
 
       # =========================
-      # RELEASE (versioned)
+      # GENERATE HASH
       # =========================
-      - name: Release versioned build
+      - name: Generate sha256
+        run: |
+          sha256sum out/geoip.dat > out/geoip.dat.sha256sum
+          sha256sum out/geosite.dat > out/geosite.dat.sha256sum
+
+      # =========================
+      # RELEASE (LATEST FIXED)
+      # =========================
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.VERSION }}
-          name: ${{ env.VERSION }}
+          tag_name: latest
+          name: latest
           files: |
-            geosite.dat
-            geosite.dat.sha256sum
+            out/geoip.dat
+            out/geosite.dat
+            out/*.sha256sum
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # =========================
-      # KEEP ONLY LAST 10 RELEASES
-      # =========================
-      - name: Cleanup old releases
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const releases = await github.rest.repos.listReleases({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 100
-            });
-
-            const sorted = releases.data.sort(
-              (a, b) => new Date(b.created_at) - new Date(a.created_at)
-            );
-
-            const toDelete = sorted.slice(10);
-
-            for (const r of toDelete) {
-              console.log("Deleting:", r.tag_name);
-
-              await github.rest.repos.deleteRelease({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: r.id
-              }).catch(() => {});
-
-              await github.rest.git.deleteRef({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: `tags/${r.tag_name}`
-              }).catch(() => {});
-            }
