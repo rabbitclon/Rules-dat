@@ -15,7 +15,7 @@ jobs:
 
     steps:
       # =========================
-      # CHECKOUT (FIXED)
+      # CHECKOUT
       # =========================
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,6 +29,15 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
+
+      # =========================
+      # BUILD VERSION
+      # =========================
+      - name: Set version
+        run: |
+          DATE=$(date +%Y.%m.%d)
+          RUN=${{ github.run_number }}
+          echo "VERSION=v${DATE}.${RUN}" >> $GITHUB_ENV
 
       # =========================
       # CLONE DLC
@@ -56,7 +65,7 @@ jobs:
             --outputname=geosite.dat
 
       # =========================
-      # DOWNLOAD GEOIP (OFFICIAL)
+      # DOWNLOAD GEOIP
       # =========================
       - name: Download geoip.dat
         run: |
@@ -64,24 +73,35 @@ jobs:
           https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
 
       # =========================
-      # GENERATE HASH
+      # HASH
       # =========================
       - name: Generate sha256
         run: |
-          sha256sum out/geoip.dat > out/geoip.dat.sha256sum
           sha256sum out/geosite.dat > out/geosite.dat.sha256sum
+          sha256sum out/geoip.dat > out/geoip.dat.sha256sum
 
       # =========================
-      # RELEASE (LATEST FIXED)
+      # RELEASE (VERSIONED)
       # =========================
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: latest
+          tag_name: ${{ env.VERSION }}
+          name: ${{ env.VERSION }}
           files: |
-            out/geoip.dat
             out/geosite.dat
+            out/geoip.dat
             out/*.sha256sum
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # =========================
+      # CLEAN OLD RELEASES (KEEP 10)
+      # =========================
+      - name: Cleanup old releases
+        uses: dev-drprasad/delete-older-releases@v0.3.4
+        with:
+          keep_latest: 10
+          delete_tags: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
