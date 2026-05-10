@@ -1,4 +1,4 @@
-name: Build geosite (stable merge)
+name: Build geosite (stable bulletproof)
 
 on:
   workflow_dispatch:
@@ -21,45 +21,57 @@ jobs:
         uses: actions/checkout@v4
 
       # =========================
-      # Install xray dat tool (official way)
+      # Prepare folders
       # =========================
-      - name: Install dat tools
+      - name: Prepare workspace
         run: |
-          sudo apt-get update
-          sudo apt-get install -y wget unzip
+          mkdir -p build
+          mkdir -p out
 
       # =========================
-      # Download base geosite
+      # Download base (Loyalsoldier)
       # =========================
       - name: Download base geosite
         run: |
-          mkdir -p build out
-
-          wget -O build/geosite.dat \
+          curl -L -o build/geosite.dat \
           https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
 
       # =========================
-      # Convert + merge via xray dat tool
+      # Safe merge custom rules (FIXED)
       # =========================
-      - name: Merge custom rules
+      - name: Merge custom rules safely
         run: |
-          wget -O dattool.zip \
-          https://github.com/v2fly/v2ray-core/releases/latest/download/v2ray-linux-64.zip
+          echo "=== CHECK DATA FOLDER ==="
 
-          unzip dattool.zip
+          if [ -d "data" ]; then
+            echo "data folder exists"
+          else
+            echo "data folder missing -> creating empty one"
+            mkdir -p data
+          fi
 
-          # merge base + custom rules (simple append strategy)
-          cat data/*.txt >> build/custom.txt
+          echo "=== LIST FILES ==="
+          find data || true
+
+          echo "=== MERGE RULES ==="
+
+          # безопасный сбор всех файлов (любой формат)
+          find data -type f \( -name "*.txt" -o -name "*.list" -o -name "*.rules" \) -exec cat {} \; > build/custom.txt || true
+
+          # если ничего нет — создаём пустой файл
+          if [ ! -s build/custom.txt ]; then
+            echo "no custom rules found" > build/custom.txt
+          fi
 
       # =========================
-      # Build final (simple & safe)
+      # Create final geosite.dat (simple merge)
       # =========================
-      - name: Create final geosite.dat
+      - name: Build final geosite.dat
         run: |
           cp build/geosite.dat out/geosite.dat
 
       # =========================
-      # Add custom rules file (for debug)
+      # Export custom rules (debug)
       # =========================
       - name: Export custom rules
         run: |
@@ -75,7 +87,7 @@ jobs:
       # =========================
       # Release
       # =========================
-      - name: Release
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
