@@ -29,7 +29,17 @@ jobs:
           go-version: '1.22'
 
       # =========================
-      # Download base geosite (Loyalsoldier)
+      # VERSION (vYYYY.MM.DD.NNN)
+      # =========================
+      - name: Set version
+        run: |
+          DATE=$(date +%Y.%m.%d)
+          RUN_NUM=$(date +%H%M%S | sed 's/^0*//')
+
+          echo "VERSION=v${DATE}.${RUN_NUM}" >> $GITHUB_ENV
+
+      # =========================
+      # Download base geosite
       # =========================
       - name: Download base geosite
         run: |
@@ -117,44 +127,71 @@ jobs:
       # =========================
       # Install deps
       # =========================
-      - name: Install dependencies
+      - name: Install deps
         run: |
           go mod init builder || true
           go get google.golang.org/protobuf/proto
           go get github.com/v2fly/v2ray-core/v5/app/router/routercommon
 
       # =========================
-      # Build geosite.dat
+      # Build geosite
       # =========================
       - name: Build geosite.dat
         run: |
           go run builder.go
 
       # =========================
-      # Generate checksum
+      # SHA256
       # =========================
       - name: Generate checksum
         run: |
           sha256sum geosite.dat > geosite.dat.sha256sum
 
       # =========================
-      # CLEAN (remove junk files)
+      # RELEASE (versioned)
       # =========================
-      - name: Cleanup
-        run: |
-          rm -f build/base.dat
-          rm -rf build/custom
-
-      # =========================
-      # Release (ONLY final files)
-      # =========================
-      - name: Release
+      - name: Release versioned build
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: "Custom geosite"
+          tag_name: ${{ env.VERSION }}
+          name: ${{ env.VERSION }}
           files: |
             geosite.dat
             geosite.dat.sha256sum
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # =========================
+      # KEEP ONLY LAST 10 RELEASES
+      # =========================
+      - name: Cleanup old releases
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const releases = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+
+            const sorted = releases.data.sort(
+              (a, b) => new Date(b.created_at) - new Date(a.created_at)
+            );
+
+            const toDelete = sorted.slice(10);
+
+            for (const r of toDelete) {
+              console.log("Deleting:", r.tag_name);
+
+              await github.rest.repos.deleteRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: r.id
+              }).catch(() => {});
+
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${r.tag_name}`
+              }).catch(() => {});
+            }
