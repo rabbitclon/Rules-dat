@@ -1,4 +1,4 @@
-name: Build custom geosite
+name: Build custom geosite.dat
 
 on:
   workflow_dispatch:
@@ -15,9 +15,9 @@ jobs:
 
     steps:
       # =========================
-      # Checkout repo
+      # Checkout
       # =========================
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       # =========================
@@ -29,16 +29,16 @@ jobs:
           go-version: '1.22'
 
       # =========================
-      # Download base geosite (Loyalsoldier)
+      # Download base geosite
       # =========================
-      - name: Download base geosite
+      - name: Download Loyalsoldier geosite
         run: |
           mkdir -p build
           curl -L -o build/base.dat \
           https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
 
       # =========================
-      # Copy custom rules
+      # Prepare custom rules
       # =========================
       - name: Prepare custom rules
         run: |
@@ -46,67 +46,107 @@ jobs:
           cp -r data/* build/custom/
 
       # =========================
-      # Run merge builder
+      # Create builder
       # =========================
-      - name: Build merged geosite
+      - name: Create builder
         run: |
           cat << 'EOF' > builder.go
           package main
 
           import (
-            "fmt"
             "os"
             "strings"
+
+            "google.golang.org/protobuf/proto"
+
+            router "github.com/v2fly/v2ray-core/v5/app/router/routercommon"
           )
 
           func main() {
-            fmt.Println("Custom merge placeholder - replace with real builder later")
+            data, _ := os.ReadFile("build/base.dat")
+
+            var geo router.GeoSiteList
+            proto.Unmarshal(data, &geo)
 
             files, _ := os.ReadDir("build/custom")
 
-            out := ""
-
             for _, f := range files {
-              data, _ := os.ReadFile("build/custom/" + f.Name())
-              lines := strings.Split(string(data), "\n")
+              name := strings.ToLower(strings.TrimSuffix(f.Name(), ".txt"))
 
-              out += "\n#" + f.Name() + "\n"
+              content, _ := os.ReadFile("build/custom/" + f.Name())
+              lines := strings.Split(string(content), "\n")
+
+              var domains []*router.Domain
+
               for _, l := range lines {
                 l = strings.TrimSpace(l)
                 if l == "" {
                   continue
                 }
-                out += l + "\n"
+
+                d := &router.Domain{}
+
+                if strings.HasPrefix(l, "full:") {
+                  d.Type = router.Domain_Full
+                  d.Value = strings.TrimPrefix(l, "full:")
+                } else if strings.HasPrefix(l, "keyword:") {
+                  d.Type = router.Domain_Plain
+                  d.Value = strings.TrimPrefix(l, "keyword:")
+                } else if strings.HasPrefix(l, "regexp:") {
+                  d.Type = router.Domain_Regex
+                  d.Value = strings.TrimPrefix(l, "regexp:")
+                } else {
+                  d.Type = router.Domain_RootDomain
+                  d.Value = l
+                }
+
+                domains = append(domains, d)
               }
+
+              geo.Entry = append(geo.Entry, &router.GeoSite{
+                CountryCode: name,
+                Domain:      domains,
+              })
             }
 
-            os.WriteFile("build/custom.txt", []byte(out), 0644)
+            out, _ := proto.Marshal(&geo)
+            os.WriteFile("geosite.dat", out, 0644)
           }
           EOF
 
+      # =========================
+      # Install deps
+      # =========================
+      - name: Install deps
+        run: |
+          go mod init builder || true
+          go get google.golang.org/protobuf/proto
+          go get github.com/v2fly/v2ray-core/v5/app/router/routercommon
+
+      # =========================
+      # Build final geosite.dat
+      # =========================
+      - name: Build geosite.dat
+        run: |
           go run builder.go
 
       # =========================
-      # Pack final files
+      # Hash
       # =========================
-      - name: Create release files
+      - name: Generate checksum
         run: |
-          mkdir -p release
-
-          cp build/base.dat release/geosite-base.dat
-          cp build/custom.txt release/geosite-custom.txt
-
-          sha256sum release/* > release/SHA256SUMS
+          sha256sum geosite.dat > geosite.dat.sha256sum
 
       # =========================
-      # GitHub Release
+      # Release
       # =========================
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: "Custom geosite build"
+          name: "Custom geosite"
           files: |
-            release/*
+            geosite.dat
+            geosite.dat.sha256sum
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
