@@ -1,4 +1,4 @@
-name: build-geosite-custom
+name: build-xray-geosite
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
       - "build.sh"
 
   schedule:
-    - cron: "0 * * * *"   # каждый час
+    - cron: "0 * * * *"
 
   workflow_dispatch:
 
@@ -16,24 +16,23 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write   # важно для release
+      contents: write
 
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install tools
+      - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq wget tar
+          sudo apt-get install -y wget unzip sed
 
-      - name: Make build script executable
-        run: chmod +x build.sh
+      - name: Build
+        run: |
+          chmod +x build.sh
+          ./build.sh
 
-      - name: Build geosite
-        run: ./build.sh
-
-      - name: Create Release
+      - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
