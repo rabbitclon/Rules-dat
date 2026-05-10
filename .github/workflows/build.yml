@@ -4,9 +4,9 @@ on:
   push:
     paths:
       - "data/**"
+  workflow_dispatch:
   schedule:
     - cron: "0 * * * *"
-  workflow_dispatch:
 
 jobs:
   build:
@@ -16,43 +16,36 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y git wget curl
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
 
-      # 1. берём официальный билд Loyalsoldier
-      - name: Clone Loyalsoldier build system
+      - name: Clone domain-list-community
         run: |
-          git clone https://github.com/Loyalsoldier/v2ray-rules-dat.git build
+          git clone https://github.com/v2fly/domain-list-community.git dlc
 
-      # 2. добавляем твои правила
       - name: Inject custom rules
         run: |
-          cp data/* build/data/
+          cp data/* dlc/data/
 
-      # 3. собираем geosite.dat
       - name: Build geosite.dat
         run: |
-          cd build
-          chmod +x release.sh
-          ./release.sh
+          cd dlc
+          go run ./ --outputdir=output
 
-      # 4. подготавливаем файл
-      - name: Prepare output
+      - name: Export result
         run: |
           mkdir -p out
-          cp build/publish/geosite.dat out/geosite.dat
+          cp dlc/output/geosite.dat out/geosite.dat
 
-      # 5. создаём release
       - name: Upload Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: geosite-custom
           files: out/geosite.dat
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
