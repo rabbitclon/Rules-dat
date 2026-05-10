@@ -6,41 +6,42 @@ rm -rf $WORKDIR
 mkdir -p $WORKDIR
 cd $WORKDIR
 
-echo "Downloading Loyalsoldier geosite..."
+echo "Download Loyalsoldier geosite..."
 wget -q https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat -O geosite.dat
 
-echo "Installing sing-box..."
-wget -q https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-linux-amd64.tar.gz
-tar -xzf sing-box-linux-amd64.tar.gz
-BIN=$(find . -type f -name sing-box | head -n 1)
-chmod +x "$BIN"
+echo "Download Xray core..."
+wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+unzip -q Xray-linux-64.zip
+
+XRAY=$(find . -type f -name xray | head -n 1)
+chmod +x "$XRAY"
 
 echo "Preparing custom rules..."
 
-TM=$(jq -R -s 'split("\n") | map(select(length>0))' ../custom/tm-rules.txt)
-PROXY=$(jq -R -s 'split("\n") | map(select(length>0))' ../custom/proxy-rules.txt)
+TM=$(grep -v '^$' ../custom/tm-rules.txt | sed 's/^/"/;s/$/"/' | paste -sd, -)
+PROXY=$(grep -v '^$' ../custom/proxy-rules.txt | sed 's/^/"/;s/$/"/' | paste -sd, -)
 
-cat > custom.json <<EOF
+cat > geosite_custom.json <<EOF
 {
   "version": 1,
   "rules": [
     {
-      "domain": $TM,
+      "domain": [$TM],
       "outboundTag": "tm-rules"
     },
     {
-      "domain": $PROXY,
-      "outboundTag": "proxy-rules"
+      "domain": [$PROXY],
+      "outboundTag": "proxy"
     }
   ]
 }
 EOF
 
-echo "Merging geosite..."
+echo "Merging via Xray geo..."
 
-$BIN geo convert \
-  --input geosite.dat \
-  --append custom.json \
-  --output geosite-custom.dat
+$XRAY run geo \
+  --input-file=geosite.dat \
+  --domain-file=geosite_custom.json \
+  --output=geosite-custom.dat
 
 echo "Done"
