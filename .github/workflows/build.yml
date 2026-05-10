@@ -4,10 +4,8 @@ on:
   push:
     paths:
       - "data/**"
-
   schedule:
     - cron: "0 * * * *"
-
   workflow_dispatch:
 
 jobs:
@@ -18,7 +16,7 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Install dependencies
@@ -26,28 +24,35 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y git wget curl
 
-      - name: Clone Loyalsoldier repo
+      # 1. берём официальный билд Loyalsoldier
+      - name: Clone Loyalsoldier build system
         run: |
-          git clone https://github.com/Loyalsoldier/v2ray-rules-dat.git dlc
+          git clone https://github.com/Loyalsoldier/v2ray-rules-dat.git build
 
-      - name: Copy custom rules
+      # 2. добавляем твои правила
+      - name: Inject custom rules
         run: |
-          cp data/* dlc/data/
+          cp data/* build/data/
 
+      # 3. собираем geosite.dat
       - name: Build geosite.dat
         run: |
-          cd dlc
+          cd build
           chmod +x release.sh
           ./release.sh
 
-      - name: Copy output
+      # 4. подготавливаем файл
+      - name: Prepare output
         run: |
-          cp dlc/publish/geosite.dat geosite.dat
+          mkdir -p out
+          cp build/publish/geosite.dat out/geosite.dat
 
+      # 5. создаём release
       - name: Upload Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          files: geosite.dat
+          name: geosite-custom
+          files: out/geosite.dat
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
