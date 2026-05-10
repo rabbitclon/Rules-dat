@@ -37,12 +37,13 @@ jobs:
       - name: Build geosite.dat
         run: |
           cd dlc
-          go run ./ --outputdir=output
+          go run ./
+          mv dlc.dat geosite.dat
 
       - name: Upload Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          files: dlc/output/geosite.dat
+          files: dlc/geosite.dat
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
