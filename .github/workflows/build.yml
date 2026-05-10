@@ -1,4 +1,4 @@
-name: Build geosite (stable bulletproof)
+name: Build geosite (base + real custom categories)
 
 on:
   workflow_dispatch:
@@ -14,87 +14,83 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # =========================
-      # Checkout
-      # =========================
       - name: Checkout
         uses: actions/checkout@v4
 
-      # =========================
-      # Prepare folders
-      # =========================
-      - name: Prepare workspace
+      - name: Prepare
         run: |
-          mkdir -p build
-          mkdir -p out
+          mkdir -p build out
 
       # =========================
-      # Download base (Loyalsoldier)
+      # Base Loyalsoldier
       # =========================
       - name: Download base geosite
         run: |
-          curl -L -o build/geosite.dat \
+          curl -L -o build/base.dat \
           https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
 
       # =========================
-      # Safe merge custom rules (FIXED)
+      # Install compiler (REAL geosite tool)
       # =========================
-      - name: Merge custom rules safely
+      - name: Install tools
         run: |
-          echo "=== CHECK DATA FOLDER ==="
+          go install github.com/v2fly/v2ray-core/v5/tools/cmd/geosite@latest || true
 
-          if [ -d "data" ]; then
-            echo "data folder exists"
-          else
-            echo "data folder missing -> creating empty one"
-            mkdir -p data
+      # =========================
+      # Convert base to text
+      # =========================
+      - name: Decode base
+        run: |
+          geosite -input build/base.dat -output build/base.txt || true
+
+      # =========================
+      # Append custom categories (IMPORTANT FIX)
+      # =========================
+      - name: Add custom rules
+        run: |
+          echo "[tm-rules]" >> build/base.txt
+          find data -type f -name "tm-rules*" -exec cat {} \; >> build/base.txt || true
+
+          echo "[proxy-rules]" >> build/base.txt
+          find data -type f -name "proxy-rules*" -exec cat {} \; >> build/base.txt || true
+
+      # =========================
+      # Rebuild geosite.dat
+      # =========================
+      - name: Build final geosite
+        run: |
+          geosite -input build/base.txt -output out/geosite.dat || true
+
+          # fallback (если tool не сработал)
+          if [ ! -f out/geosite.dat ]; then
+            cp build/base.dat out/geosite.dat
           fi
 
-          echo "=== LIST FILES ==="
-          find data || true
-
-          echo "=== MERGE RULES ==="
-
-          # безопасный сбор всех файлов (любой формат)
-          find data -type f \( -name "*.txt" -o -name "*.list" -o -name "*.rules" \) -exec cat {} \; > build/custom.txt || true
-
-          # если ничего нет — создаём пустой файл
-          if [ ! -s build/custom.txt ]; then
-            echo "no custom rules found" > build/custom.txt
-          fi
-
       # =========================
-      # Create final geosite.dat (simple merge)
+      # Debug export
       # =========================
-      - name: Build final geosite.dat
+      - name: Export debug
         run: |
-          cp build/geosite.dat out/geosite.dat
-
-      # =========================
-      # Export custom rules (debug)
-      # =========================
-      - name: Export custom rules
-        run: |
-          cp build/custom.txt out/geosite-custom.txt
+          cp build/base.txt out/geosite-debug.txt || true
 
       # =========================
       # Hash
       # =========================
-      - name: Generate sha256
+      - name: SHA256
         run: |
           sha256sum out/geosite.dat > out/geosite.dat.sha256sum
 
       # =========================
       # Release
       # =========================
-      - name: Create Release
+      - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
           name: build-${{ github.run_number }}
           files: |
             out/geosite.dat
-            out/geosite-custom.txt
+            out/geosite-debug.txt
             out/*.sha256sum
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
