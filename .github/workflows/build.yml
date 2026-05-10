@@ -1,10 +1,9 @@
-name: build-xray-geosite
+name: Build geosite.dat
 
 on:
   push:
     paths:
-      - "custom/**"
-      - "build.sh"
+      - "data/**"
 
   schedule:
     - cron: "0 * * * *"
@@ -19,24 +18,31 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y wget unzip sed
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
 
-      - name: Build
+      - name: Clone domain-list-community
         run: |
-          chmod +x build.sh
-          ./build.sh
+          git clone https://github.com/v2fly/domain-list-community.git dlc
 
-      - name: Release
+      - name: Copy custom rules
+        run: |
+          cp data/* dlc/data/
+
+      - name: Build geosite.dat
+        run: |
+          cd dlc
+          go run ./ --outputdir=output
+
+      - name: Upload Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: geosite-custom
-          files: work/geosite-custom.dat
+          files: dlc/output/geosite.dat
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
